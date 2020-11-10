@@ -1,80 +1,118 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-
-#define SERVER "127.0.0.1"
-#define BUFLEN 503
-#define PORT 8885
-
-void die(char *s) // used to quit
-{
-    perror(s);
-    exit(1);
-}
-unsigned long fsize(char *file)
-{
-    FILE *f = fopen(file, "r");
-    fseek(f, 0, SEEK_END);                       //used to take the function pointer to the starting of the file or end of the file or to        any position specified by the user.
-    unsigned long len = (unsigned long)ftell(f); // used to find out the position of file pointer in the file with        respect to starting of the file.
-    fclose(f);
-    return len;
-}
-
-int main(void)
-{
-    struct sockaddr_in si_other;
-    int s, i, slen = sizeof(si_other);
-    char buf[BUFLEN];
-    char message[BUFLEN];
-
-    if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == -1)
-    {
-        die("socket");
-    }
-
-    memset((char *)&si_other, 0, sizeof(si_other));
-
-    si_other.sin_family = AF_INET;
-    si_other.sin_port = htons(PORT);
-
-    if (inet_aton(SERVER, &si_other.sin_addr) == 0) //converts the specified string, in the Internet standard         dot notation, to a network address, and stores the address in         the structure provided.
-    {
-        fprintf(stderr, "inet_aton() failed\n");
-        exit(1);
-    }
-
-    char fname[20];
-    printf("Enter Filename with extension: ");
-    scanf("%s", &fname); //add.txt
-    sendto(s, fname, 20, 0, (struct sockaddr *)&si_other, slen);
-    memset(message, 0, 503);
-    unsigned long siz = fsize(fname); //fsize(add.txt)=20
-    printf("%ld", (siz % 503));       //20%503=20
-    char str[10];
-    sprintf(str, "%d", siz);
-    sendto(s, str, 20, 0, (struct sockaddr *)&si_other, slen);
-    FILE *f;
-    f = fopen(fname, "rb");
-    memset(message, 0, 503);
-    fread(message, 503, 1, f);
-    int itr = 1;
-    while (itr * 503 < siz)
-    {
-        //fread(message, 503,1,f);
-        if (sendto(s, message, 503, 0, (struct sockaddr *)&si_other, slen) == -1)
-        {
-            die("sendto()");
-        }
-        memset(message, 0, 503);
-        fread(message, 503, 1, f);
-        itr++;
-    }
-    fread(message, (siz % 503), 1, f);
-    sendto(s, message, (siz % 503), 0, (struct sockaddr *)&si_other, slen);
-    memset(message, 0, 503);
-    fclose(f);
-    close(s);
-    return 0;
+#include <arpa/inet.h> 
+#include <netinet/in.h> 
+#include <stdio.h> 
+#include <stdlib.h> 
+#include <string.h> 
+#include <sys/socket.h> 
+#include <sys/types.h> 
+#include <unistd.h> 
+  
+#define IP_PROTOCOL 0 
+#define PORT_NO 15050 
+#define NET_BUF_SIZE 32 
+#define cipherKey 'S' 
+#define sendrecvflag 0 
+#define nofile "File Not Found!" 
+  
+// funtion to clear buffer 
+void clearBuf(char* b) 
+{ 
+    int i; 
+    for (i = 0; i < NET_BUF_SIZE; i++) 
+        b[i] = '\0'; 
+} 
+  
+// funtion to encrypt 
+char Cipher(char ch) 
+{ 
+    return ch ^ cipherKey; 
+} 
+  
+// funtion sending file 
+int sendFile(FILE* fp, char* buf, int s) 
+{ 
+    int i, len; 
+    if (fp == NULL) { 
+        strcpy(buf, nofile); 
+        len = strlen(nofile); 
+        buf[len] = EOF; 
+        for (i = 0; i <= len; i++) 
+            buf[i] = Cipher(buf[i]); 
+        return 1; 
+    } 
+  
+    char ch, ch2; 
+    for (i = 0; i < s; i++) { 
+        ch = fgetc(fp); 
+        ch2 = Cipher(ch); 
+        buf[i] = ch2; 
+        if (ch == EOF) 
+            return 1; 
+    } 
+    return 0; 
+} 
+  
+// driver code 
+int main() 
+{ 
+    int sockfd, nBytes; 
+    struct sockaddr_in addr_con; 
+    int addrlen = sizeof(addr_con); 
+    addr_con.sin_family = AF_INET; 
+    addr_con.sin_port = htons(PORT_NO); 
+    addr_con.sin_addr.s_addr = INADDR_ANY; 
+    char net_buf[NET_BUF_SIZE]; 
+    FILE* fp; 
+  
+    // socket() 
+    sockfd = socket(AF_INET, SOCK_DGRAM, IP_PROTOCOL); 
+  
+    if (sockfd < 0) 
+        printf("\nfile descriptor not received!!\n"); 
+    else
+        printf("\nfile descriptor %d received\n", sockfd); 
+  
+    // bind() 
+    if (bind(sockfd, (struct sockaddr*)&addr_con, sizeof(addr_con)) == 0) 
+        printf("\nSuccessfully binded!\n"); 
+    else
+        printf("\nBinding Failed!\n"); 
+  
+    while (1) { 
+        printf("\nWaiting for file name...\n"); 
+  
+        // receive file name 
+        clearBuf(net_buf); 
+  
+        nBytes = recvfrom(sockfd, net_buf, 
+                          NET_BUF_SIZE, sendrecvflag, 
+                          (struct sockaddr*)&addr_con, &addrlen); 
+  
+        fp = fopen(net_buf, "r"); 
+        printf("\nFile Name Received: %s\n", net_buf); 
+        if (fp == NULL) 
+            printf("\nFile open failed!\n"); 
+        else
+            printf("\nFile Successfully opened!\n"); 
+  
+        while (1) { 
+  
+            // process 
+            if (sendFile(fp, net_buf, NET_BUF_SIZE)) { 
+                sendto(sockfd, net_buf, NET_BUF_SIZE, 
+                       sendrecvflag,  
+                    (struct sockaddr*)&addr_con, addrlen); 
+                break; 
+            } 
+  
+            // send 
+            sendto(sockfd, net_buf, NET_BUF_SIZE, 
+                   sendrecvflag, 
+                (struct sockaddr*)&addr_con, addrlen); 
+            clearBuf(net_buf); 
+        } 
+        if (fp != NULL) 
+            fclose(fp); 
+    } 
+    return 0; 
 }
