@@ -6,7 +6,7 @@ public class server
     {
         byte b[]=new byte[3072];
         DatagramSocket dsoc=new DatagramSocket(1000);
-        FileOutputStream f=new FileOutputStream("D:/nandha.txt");
+        FileOutputStream f=new FileOutputStream("C:");
         while(true)
         {
                     DatagramPacket dp=new DatagramPacket(b,b.length);
